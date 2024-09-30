@@ -4,81 +4,48 @@ variable "location" {
   nullable    = false
 }
 
-variable "name" {
+variable "policy_definition_id" {
   type        = string
-  description = "The name of the this resource."
-
-  validation {
-    condition     = can(regex("TODO", var.name))
-    error_message = "The name must be TODO." # TODO remove the example below once complete:
-    #condition     = can(regex("^[a-z0-9]{5,50}$", var.name))
-    #error_message = "The name must be between 5 and 50 characters long and can only contain lowercase letters and numbers."
-  }
+  description = "(Required) The ID of the Policy Definition or Policy Definition Set. Changing this forces a new Policy Assignment to be created."
 }
 
-# This is required for most resource modules
-variable "resource_group_name" {
+variable "scope" {
   type        = string
-  description = "The resource group where the resources will be deployed."
+  description = "(Required) The Scope at which this Policy Assignment should be applied. Changing this forces a new Policy Assignment to be created."
 }
 
-# required AVM interfaces
-# remove only if not supported by the resource
-# tflint-ignore: terraform_unused_declarations
-variable "customer_managed_key" {
+variable "delays" {
   type = object({
-    key_vault_resource_id              = optional(string)
-    key_name                           = optional(string)
-    key_version                        = optional(string, null)
-    user_assigned_identity_resource_id = optional(string, null)
+    before_policy_assignments = optional(object({
+      create  = optional(string, "30s")
+      destroy = optional(string, "0s")
+    }), {})
+    before_policy_role_assignments = optional(object({
+      create  = optional(string, "60s")
+      destroy = optional(string, "0s")
+    }), {})
+    before_policy_exemptions = optional(object({
+      create  = optional(string, "30s")
+      destroy = optional(string, "0s")
+    }), {})
   })
   default     = {}
-  description = "Customer managed keys that should be associated with the resource."
+  description = <<DESCRIPTION
+A map of delays to apply to the creation and destruction of resources.
+Included to work around some race conditions in Azure.
+DESCRIPTION
 }
 
-variable "diagnostic_settings" {
-  type = map(object({
-    name                                     = optional(string, null)
-    log_categories                           = optional(set(string), [])
-    log_groups                               = optional(set(string), ["allLogs"])
-    metric_categories                        = optional(set(string), ["AllMetrics"])
-    log_analytics_destination_type           = optional(string, "Dedicated")
-    workspace_resource_id                    = optional(string, null)
-    storage_account_resource_id              = optional(string, null)
-    event_hub_authorization_rule_resource_id = optional(string, null)
-    event_hub_name                           = optional(string, null)
-    marketplace_partner_resource_id          = optional(string, null)
-  }))
-  default     = {}
-  description = <<DESCRIPTION
-A map of diagnostic settings to create on the Key Vault. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
+variable "description" {
+  type        = string
+  default     = ""
+  description = "(Optional) A description which should be used for this Policy Assignment."
+}
 
-- `name` - (Optional) The name of the diagnostic setting. One will be generated if not set, however this will not be unique if you want to create multiple diagnostic setting resources.
-- `log_categories` - (Optional) A set of log categories to send to the log analytics workspace. Defaults to `[]`.
-- `log_groups` - (Optional) A set of log groups to send to the log analytics workspace. Defaults to `["allLogs"]`.
-- `metric_categories` - (Optional) A set of metric categories to send to the log analytics workspace. Defaults to `["AllMetrics"]`.
-- `log_analytics_destination_type` - (Optional) The destination type for the diagnostic setting. Possible values are `Dedicated` and `AzureDiagnostics`. Defaults to `Dedicated`.
-- `workspace_resource_id` - (Optional) The resource ID of the log analytics workspace to send logs and metrics to.
-- `storage_account_resource_id` - (Optional) The resource ID of the storage account to send logs and metrics to.
-- `event_hub_authorization_rule_resource_id` - (Optional) The resource ID of the event hub authorization rule to send logs and metrics to.
-- `event_hub_name` - (Optional) The name of the event hub. If none is specified, the default event hub will be selected.
-- `marketplace_partner_resource_id` - (Optional) The full ARM resource ID of the Marketplace resource to which you would like to send Diagnostic LogsLogs.
-DESCRIPTION
-  nullable    = false
-
-  validation {
-    condition     = alltrue([for _, v in var.diagnostic_settings : contains(["Dedicated", "AzureDiagnostics"], v.log_analytics_destination_type)])
-    error_message = "Log analytics destination type must be one of: 'Dedicated', 'AzureDiagnostics'."
-  }
-  validation {
-    condition = alltrue(
-      [
-        for _, v in var.diagnostic_settings :
-        v.workspace_resource_id != null || v.storage_account_resource_id != null || v.event_hub_authorization_rule_resource_id != null || v.marketplace_partner_resource_id != null
-      ]
-    )
-    error_message = "At least one of `workspace_resource_id`, `storage_account_resource_id`, `marketplace_partner_resource_id`, or `event_hub_authorization_rule_resource_id`, must be set."
-  }
+variable "display_name" {
+  type        = string
+  default     = ""
+  description = "(Optional) The Display Name for this Policy Assignment."
 }
 
 variable "enable_telemetry" {
@@ -91,111 +58,174 @@ If it is set to false, then no telemetry will be collected.
 DESCRIPTION
 }
 
-variable "lock" {
-  type = object({
-    name = optional(string, null)
-    kind = optional(string, "None")
-  })
-  default     = {}
-  description = "The lock level to apply. Default is `None`. Possible values are `None`, `CanNotDelete`, and `ReadOnly`."
-  nullable    = false
+variable "enforce" {
+  type        = string
+  default     = "Default"
+  description = "(Optional) Specifies if this Policy should be enforced or not? Options are `Default` and `DoNotEnforce`."
 
   validation {
-    condition     = contains(["CanNotDelete", "ReadOnly", "None"], var.lock.kind)
-    error_message = "The lock level must be one of: 'None', 'CanNotDelete', or 'ReadOnly'."
+    condition     = contains(["Default", "DoNotEnforce"], var.enforce)
+    error_message = "enforce must be one of `Default` or `DoNotEnforce`."
+
   }
 }
 
-# tflint-ignore: terraform_unused_declarations
-variable "managed_identities" {
-  type = object({
-    system_assigned            = optional(bool, false)
-    user_assigned_resource_ids = optional(set(string), [])
-  })
-  default     = {}
-  description = "Managed identities to be created for the resource."
+variable "exemptions" {
+  type = list(object({
+    resource_id                     = string
+    policy_definition_reference_ids = optional(list(string))
+    exemption_category              = string
+  }))
+  default     = []
+  description = <<DESCRIPTION
+  - `name` - (Required) The name of the Policy Exemption. Changing this forces a new resource to be created.
+- `resource_id` - (Required) The Resource ID where the Policy Exemption should be applied. Changing this forces a new resource to be created.
+- `exemption_category` - (Required) The category of this policy exemption. Possible values are `Waiver` and `Mitigated`.
+- `policy_assignment_id` - (Required) The ID of the Policy Assignment to be exempted at the specified Scope. Changing this forces a new resource to be created.
+- `description` - (Optional) A description to use for this Policy Exemption.
+- `display_name` - (Optional) A friendly display name to use for this Policy Exemption.
+- `expires_on` - (Optional) The expiration date and time in UTC ISO 8601 format of this policy exemption.
+- `policy_definition_reference_ids` - (Optional) The policy definition reference ID list when the associated policy assignment is an assignment of a policy set definition.
+- `metadata` - (Optional) The metadata for this policy exemption. This is a JSON string representing additional metadata that should be stored with the policy exemption.
+DESCRIPTION
+
+  validation {
+    condition     = alltrue([for e in var.exemptions : e.resource_id != null])
+    error_message = "The resource_id needs to be set."
+  }
+  validation {
+    condition     = alltrue([for e in var.exemptions : contains(["Waiver", "Mitigated"], e.exemption_category)])
+    error_message = "Exemption category must be one of Waiver or Mitigated."
+  }
+  validation { # TODO - change to warning
+    condition     = alltrue([for e in var.exemptions : length(lookup(e, "display_name", "")) <= 128])
+    error_message = "The display_name is too long and will be shortened."
+  }
 }
 
-variable "private_endpoints" {
-  type = map(object({
-    name = optional(string, null)
-    role_assignments = optional(map(object({
-      role_definition_id_or_name             = string
-      principal_id                           = string
-      description                            = optional(string, null)
-      skip_service_principal_aad_check       = optional(bool, false)
-      condition                              = optional(string, null)
-      condition_version                      = optional(string, null)
-      delegated_managed_identity_resource_id = optional(string, null)
-    })), {})
-    lock = optional(object({
-      name = optional(string, null)
-      kind = optional(string, "None")
-    }), {})
-    tags                                    = optional(map(any), null)
-    subnet_resource_id                      = string
-    private_dns_zone_group_name             = optional(string, "default")
-    private_dns_zone_resource_ids           = optional(set(string), [])
-    application_security_group_associations = optional(map(string), {})
-    private_service_connection_name         = optional(string, null)
-    network_interface_name                  = optional(string, null)
-    location                                = optional(string, null)
-    resource_group_name                     = optional(string, null)
-    ip_configurations = optional(map(object({
-      name               = string
-      private_ip_address = string
-    })), {})
-  }))
-  default     = {}
+variable "identity" {
+  type = object({
+    type = string
+  })
+  default     = null
   description = <<DESCRIPTION
-A map of private endpoints to create on this resource. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
+  (Optional) An identity block as defined below.
+   - `type` - (Required) SystemAssigned or UserAssigned.
+  DESCRIPTION
+}
 
-- `name` - (Optional) The name of the private endpoint. One will be generated if not set.
-- `role_assignments` - (Optional) A map of role assignments to create on the private endpoint. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time. See `var.role_assignments` for more information.
-- `lock` - (Optional) The lock level to apply to the private endpoint. Default is `None`. Possible values are `None`, `CanNotDelete`, and `ReadOnly`.
-- `tags` - (Optional) A mapping of tags to assign to the private endpoint.
-- `subnet_resource_id` - The resource ID of the subnet to deploy the private endpoint in.
-- `private_dns_zone_group_name` - (Optional) The name of the private DNS zone group. One will be generated if not set.
-- `private_dns_zone_resource_ids` - (Optional) A set of resource IDs of private DNS zones to associate with the private endpoint. If not set, no zone groups will be created and the private endpoint will not be associated with any private DNS zones. DNS records must be managed external to this module.
-- `application_security_group_resource_ids` - (Optional) A map of resource IDs of application security groups to associate with the private endpoint. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
-- `private_service_connection_name` - (Optional) The name of the private service connection. One will be generated if not set.
-- `network_interface_name` - (Optional) The name of the network interface. One will be generated if not set.
-- `location` - (Optional) The Azure location where the resources will be deployed. Defaults to the location of the resource group.
-- `resource_group_name` - (Optional) The resource group where the resources will be deployed. Defaults to the resource group of this resource.
-- `ip_configurations` - (Optional) A map of IP configurations to create on the private endpoint. If not specified the platform will create one. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
-  - `name` - The name of the IP configuration.
-  - `private_ip_address` - The private IP address of the IP configuration.
-DESCRIPTION
+variable "metadata" {
+  type        = map(any)
+  default     = {}
+  description = "(Optional) A mapping of any Metadata for this Policy."
+}
+
+variable "name" {
+  type        = string
+  default     = ""
+  description = "(Optional) The Display Name for this Policy Assignment."
+}
+
+variable "non_compliance_messages" {
+  type = set(object({
+    message                        = string
+    policy_definition_reference_id = optional(string, null)
+  }))
+  default     = []
+  description = <<DESCRIPTION
+  (Optional) A set of non compliance message objects to use for the policy assignment. Each object has the following properties:
+  - `message` - (Required) The non compliance message.
+  - `policy_definition_reference_id` - (Optional) The reference id of the policy definition to use for the non compliance message.
+    DESCRIPTION
+}
+
+variable "not_scopes" {
+  type        = list(string)
+  default     = []
+  description = "(Optional) Specifies a list of Resource Scopes (for example a Subscription, or a Resource Group) within this Management Group which are excluded from this Policy."
+}
+
+variable "overrides" {
+  type = list(object({
+    kind  = string
+    value = string
+    selectors = optional(list(object({
+      kind   = string
+      in     = optional(set(string), null)
+      not_in = optional(set(string), null)
+    })), [])
+  }))
+  default     = []
+  description = <<DESCRIPTION
+(Optional) A list of override objects to use for the policy assignment. Each object has the following properties:
+  - `kind` - (Required) The kind of the override.
+  - `value` - (Required) The value of the override. Supported values are policy effects: <https://learn.microsoft.com/azure/governance/policy/concepts/effects>.
+  - `selectors` - (Optional) A list of selector objects to use for the override. Each object has the following properties:
+    - `kind` - (Required) The kind of the selector.
+    - `in` - (Optional) A set of strings to include in the selector.
+    - `not_in` - (Optional) A set of strings to exclude from the selector.
+
+ DESCRIPTION
+}
+
+variable "parameters" {
+  type        = map(any)
+  default     = null
+  description = "(Optional) A mapping of any Parameters for this Policy."
+}
+
+variable "resource_selectors" {
+  type = list(object({
+    name = string
+    selectors = optional(list(object({
+      kind   = string
+      in     = optional(set(string), null)
+      not_in = optional(set(string), null)
+    })), [])
+  }))
+  default     = []
+  description = <<DESCRIPTION
+(Optional) A list of resource selector objects to use for the policy assignment. Each object has the following properties:
+  - `name` - (Required) The name of the resource selector.
+  - `selectors` - (Optional) A list of selector objects to use for the resource selector. Each object has the following properties:
+    - `kind` - (Required) The kind of the selector. Allowed values are: `resourceLocation`, `resourceType`, `resourceWithoutLocation`. `resourceWithoutLocation` cannot be used in the same resource selector as `resourceLocation`.
+    - `in` - (Optional) A set of strings to include in the selector.
+    - `not_in` - (Optional) A set of strings to exclude from the selector.
+  DESCRIPTION
 }
 
 variable "role_assignments" {
   type = map(object({
-    role_definition_id_or_name             = string
+    role_definition_id_or_name = string
+    # principal_id                           = optional(string, null) # TODO the principal_id is not known before policy assignment
     principal_id                           = string
     description                            = optional(string, null)
     skip_service_principal_aad_check       = optional(bool, false)
     condition                              = optional(string, null)
     condition_version                      = optional(string, null)
     delegated_managed_identity_resource_id = optional(string, null)
+    principal_type                         = optional(string, null)
   }))
   default     = {}
   description = <<DESCRIPTION
-A map of role assignments to create on this resource. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
-
-- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
-- `principal_id` - The ID of the principal to assign the role to.
-- `description` - The description of the role assignment.
-- `skip_service_principal_aad_check` - If set to true, skips the Azure Active Directory check for the service principal in the tenant. Defaults to false.
-- `condition` - The condition which will be used to scope the role assignment.
-- `condition_version` - The version of the condition syntax. Valid values are '2.0'.
-
-> Note: only set `skip_service_principal_aad_check` to true if you are assigning a role to a service principal.
-DESCRIPTION
+  A map of role assignments to create on the <RESOURCE>. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
+  
+  - `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
+  - `principal_id` - The ID of the principal to assign the role to.
+  - `description` - (Optional) The description of the role assignment.
+  - `skip_service_principal_aad_check` - (Optional) If set to true, skips the Azure Active Directory check for the service principal in the tenant. Defaults to false.
+  - `condition` - (Optional) The condition which will be used to scope the role assignment.
+  - `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
+  - `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.
+  - `principal_type` - (Optional) The type of the `principal_id`. Possible values are `User`, `Group` and `ServicePrincipal`. It is necessary to explicitly set this attribute when creating role assignments if the principal creating the assignment is constrained by ABAC rules that filters on the PrincipalType attribute.
+  
+  > Note: only set `skip_service_principal_aad_check` to true if you are assigning a role to a service principal.
+  DESCRIPTION
+  nullable    = false
 }
 
-# tflint-ignore: terraform_unused_declarations
-variable "tags" {
-  type        = map(any)
-  default     = {}
-  description = "The map of tags to be applied to the resource"
+variable "schema_validation_enabled" {
+  type        = bool
+  default     = true
+  description = "(Optional) Specifies if this Policy should be validated against the schema. Defaults to true."
 }

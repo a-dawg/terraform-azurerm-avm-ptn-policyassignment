@@ -1,11 +1,11 @@
 <!-- BEGIN_TF_DOCS -->
-# Default example
+# Assign policy at resource group
 
-This deploys the module in its simplest form.
+This example demonstrates how to assign a policy at a resource group scope. The parameter which needs to be set is "resource\_group\_ids".
 
 ```hcl
 terraform {
-  required_version = "~> 1.3"
+  required_version = "~> 1.8"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -19,7 +19,11 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
 }
 
 
@@ -43,25 +47,31 @@ module "naming" {
   version = "~> 0.3"
 }
 
-# This is required for resource modules
-resource "azurerm_resource_group" "this" {
+
+resource "azurerm_resource_group" "example" {
   location = module.regions.regions[random_integer.region_index.result].name
-  name     = module.naming.resource_group.name_unique
+  name     = "example-rg"
 }
 
-# This is the module call
-# Do not specify location here due to the randomization above.
-# Leaving location as `null` will cause the module to use the resource group location
-# with a data source.
-module "test" {
+module "assign_policy_at_resource_group" {
   source = "../../"
-  # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
-  # ...
-  location            = azurerm_resource_group.this.location
-  name                = "TODO" # TODO update with module.naming.<RESOURCE_TYPE>.name_unique
-  resource_group_name = azurerm_resource_group.this.name
-
+  # source = "Azure/terraform-azurerm-avm-ptn-policyassignment"
   enable_telemetry = var.enable_telemetry # see variables.tf
+
+  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/d8cf8476-a2ec-4916-896e-992351803c44"
+
+  scope        = azurerm_resource_group.example.id
+  name         = "Enforce-GR-Keyvault"
+  display_name = "Keys should have a rotation policy ensuring that their rotation is scheduled within the specified number of days after creation."
+  description  = "Keys should have a rotation policy ensuring that their rotation is scheduled within the specified number of days after creation."
+  enforce      = "Default"
+  location     = module.regions.regions[random_integer.region_index.result].name
+
+  parameters = {
+    maximumDaysToRotate = {
+      value = 90
+    }
+  }
 }
 ```
 
@@ -70,7 +80,7 @@ module "test" {
 
 The following requirements are needed by this module:
 
-- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (~> 1.3)
+- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (~> 1.8)
 
 - <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (~> 3.74)
 
@@ -80,7 +90,7 @@ The following requirements are needed by this module:
 
 The following resources are used by this module:
 
-- [azurerm_resource_group.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) (resource)
+- [azurerm_resource_group.example](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) (resource)
 - [random_integer.region_index](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/integer) (resource)
 
 <!-- markdownlint-disable MD013 -->
@@ -110,6 +120,12 @@ No outputs.
 
 The following Modules are called:
 
+### <a name="module_assign_policy_at_resource_group"></a> [assign\_policy\_at\_resource\_group](#module\_assign\_policy\_at\_resource\_group)
+
+Source: ../../
+
+Version:
+
 ### <a name="module_naming"></a> [naming](#module\_naming)
 
 Source: Azure/naming/azurerm
@@ -121,12 +137,6 @@ Version: ~> 0.3
 Source: Azure/regions/azurerm
 
 Version: ~> 0.3
-
-### <a name="module_test"></a> [test](#module\_test)
-
-Source: ../../
-
-Version:
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection

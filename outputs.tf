@@ -1,11 +1,26 @@
-output "private_endpoints" {
-  description = "A map of private endpoints. The map key is the supplied input to var.private_endpoints. The map value is the entire azurerm_private_endpoint resource."
-  value       = azurerm_private_endpoint.this
+output "policy_assignment_id" {
+  description = "This is the id of the policy assignment"
+  value       = azapi_resource.policy_assignment.id
 }
 
-# Module owners should include the full resource via a 'resource' output
-# https://azure.github.io/Azure-Verified-Modules/specs/terraform/#id-tffr2---category-outputs---additional-terraform-outputs
+output "policy_assignment_name" {
+  description = "This is the name of the policy assignment"
+  value       = azapi_resource.policy_assignment.name
+}
+
 output "resource" {
-  description = "This is the full output for the resource."
-  value       = azurerm_resource_group.TODO # TODO: Replace this dummy resource azurerm_resource_group.TODO with your module resource
+  description = "Deprecated"
+  value = {
+    "resource_id" : azapi_resource.policy_assignment.id
+  }
+}
+
+output "resource_id" {
+  description = "This is the resource id of the policy assignment."
+  value       = azapi_resource.policy_assignment.id
+}
+
+output "role_assignments" {
+  description = "This is the full output for the role assignments."
+  value       = azurerm_role_assignment.this
 }
